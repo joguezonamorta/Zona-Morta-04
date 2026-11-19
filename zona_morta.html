@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Zona Morta — Sobrevivência 3D</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101713;font-family:Arial,sans-serif;touch-action:none}
+#game{display:block;width:100%;height:100%}
+#hud{position:fixed;inset:0;pointer-events:none;color:white;z-index:4;text-shadow:0 2px 4px #000}
+.panel{background:#101a16b8;border:1px solid #a8c2ad55;border-radius:10px;padding:8px 11px}
+#status{position:absolute;top:12px;left:12px;font-size:13px;line-height:1.5}
+#objective{position:absolute;top:12px;right:12px;text-align:right;font-size:12px;max-width:48%}
+#message{position:absolute;top:23%;left:50%;transform:translateX(-50%);font-weight:bold;font-size:17px;text-align:center;white-space:nowrap}
+#controls{position:absolute;inset:0;pointer-events:none;z-index:5}
+#stick{position:absolute;left:22px;bottom:22px;width:132px;height:132px;border-radius:50%;background:#dce9df22;border:2px solid #e7f4e766;pointer-events:auto;touch-action:none}
+#nub{position:absolute;left:39px;top:39px;width:50px;height:50px;border-radius:50%;background:#dce9df88;border:2px solid #fff9}
+.actions{position:absolute;right:18px;bottom:22px;display:grid;grid-template-columns:repeat(2,68px);gap:10px;pointer-events:auto;z-index:6}
+.action{height:62px;border-radius:50%;pointer-events:auto;position:relative;z-index:7;border:1px solid #fff9;background:#18251ed9;color:white;font-weight:bold;font-size:11px;touch-action:none}
+.action:active{background:#597b5c}
+#hint{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#dce8dc;text-align:center;white-space:nowrap}
+@media(orientation:portrait){#hint:after{content:" • gire o celular para jogar melhor"}}
+
+#minimapWrap{position:absolute;left:12px;top:112px;width:142px;height:142px;padding:5px;background:#101a16d9;border:1px solid #b7c9ad88;border-radius:12px;pointer-events:none}
+#minimap{width:100%;height:100%;display:block;border-radius:8px}
+#questHud{position:absolute;left:166px;bottom:18px;max-width:min(48vw,260px);font-size:11px;line-height:1.4}
+#status{max-width:150px}
+@media(max-width:520px){#minimapWrap{width:112px;height:112px;left:8px;top:108px}#questHud{left:128px;bottom:10px;max-width:40vw;font-size:10px}#weaponHud{bottom:168px;right:10px}}
+</style>
+
+<style>
+#mainMenu,#settingsMenu{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:linear-gradient(120deg,#101914ed,#17251bdc),radial-gradient(circle at 70% 30%,#65755b55,transparent 55%);color:#f3f5ed;padding:18px}
+.menuCard{width:min(440px,94vw);max-height:92vh;overflow:auto;background:#111b16ee;border:1px solid #a5b99b66;border-radius:18px;padding:22px;box-shadow:0 18px 60px #0009}
+.menuTitle{font-size:clamp(28px,7vw,42px);font-weight:900;letter-spacing:2px;margin:0}
+.menuSub{color:#bac8b8;font-size:12px;margin:6px 0 20px}
+.menuBtn{width:100%;padding:14px;margin:6px 0;border-radius:10px;border:1px solid #9eb29b66;background:#344b39;color:white;font-weight:bold;font-size:14px}
+.menuBtn.secondary{background:#202b24}
+.setting{padding:12px 0;border-bottom:1px solid #ffffff1c}
+.setting label{display:block;font-size:13px;font-weight:bold;margin-bottom:9px}
+.setting select,.setting input{width:100%;padding:11px;border-radius:8px;border:1px solid #8b9b8b;background:#202b24;color:white}
+.choiceRow{display:flex;gap:7px}
+.choiceRow button{flex:1;padding:10px 5px;background:#202b24;color:white;border:1px solid #84958466;border-radius:8px}
+.choiceRow button.selected{background:#607e57;border-color:#c3d6b7}
+#weaponHud{position:absolute;right:22px;bottom:168px;font-size:12px;text-align:right}
+#weaponHud strong{font-size:18px}
+#crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:23px;color:#fff;text-shadow:0 1px 5px #000;display:none}
+#hitFlash{position:fixed;inset:0;pointer-events:none;background:#b5212130;opacity:0;z-index:4}
+#hudSlots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.slotPreview{height:46px;border:1px solid #82958266;border-radius:8px;background:#26352b;display:flex;align-items:center;justify-content:center;font-size:11px;color:#eaf0e6}
+#settingsMenu{display:none}
+body.menuOpen #hud,body.menuOpen #controls,body.lobbyOpen #hud,body.lobbyOpen #controls,body.deathOpen #hud,body.deathOpen #controls{display:none}
+#deathScreen,#lobbyScreen{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;padding:18px;color:#f4f6ef;text-align:center;pointer-events:auto}
+#deathScreen{background:radial-gradient(ellipse at center,#4a1111d9 0%,#170b0bf2 68%),linear-gradient(135deg,#160b0b,#301010)}
+#lobbyScreen{background:linear-gradient(90deg,#07130fd9 0%,#0a171c66 48%,#07130f88 100%);justify-content:flex-start;text-align:left}
+.overlayCard{width:min(460px,94vw);padding:26px;background:#101a16ed;border:1px solid #b7c9ad66;border-radius:18px;box-shadow:0 18px 70px #000b}
+#deathScreen .overlayCard{border-color:#b95b5b88}
+.overlayEyebrow{font-size:11px;letter-spacing:4px;color:#c6d3bd;font-weight:bold}
+.overlayTitle{font-size:clamp(34px,9vw,58px);font-weight:1000;letter-spacing:2px;margin:9px 0}
+.overlayText{color:#c7d0c5;font-size:13px;line-height:1.55;margin:8px 0 18px}
+.overlayStats{display:flex;justify-content:center;gap:10px;margin:18px 0}
+.overlayStat{flex:1;background:#ffffff0c;border:1px solid #ffffff1c;border-radius:10px;padding:10px;font-size:11px;color:#bfcbbb}
+.overlayStat strong{display:block;color:white;font-size:22px;margin-bottom:3px}
+.overlayBtn{width:100%;padding:15px;margin:6px 0;border-radius:10px;border:1px solid #a9c29b88;background:#526f48;color:white;font-weight:900;letter-spacing:1px;font-size:14px}
+.overlayBtn.secondary{background:#202c27;border-color:#8d9c8a66}
+#lobbyScreen .overlayCard{align-self:flex-end;margin:0 0 4vh 2vw;background:#101a16e8}
+#lobbyScreen .overlayTitle{font-size:clamp(30px,7vw,48px)}
+.lobbyTag{display:inline-block;padding:6px 10px;border-radius:20px;background:#7eaa5a33;border:1px solid #b9d69a66;color:#d5e9c5;font-size:10px;letter-spacing:2px;margin-top:10px}
+@media(max-width:520px){#lobbyScreen{align-items:flex-end;padding:12px}#lobbyScreen .overlayCard{margin:0 0 2vh 0;padding:19px}.overlayStats{gap:6px}.overlayStat{padding:8px}}
+body.menuOpen #hud,body.menuOpen #controls{display:none}
+</style>
+
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="mainMenu">
+ <div class="menuCard">
+  <div style="font-size:12px;letter-spacing:4px;color:#b9c9ad">SOBREVIVA À ZONA</div>
+  <h1 class="menuTitle">ZONA MORTA</h1>
+  <div class="menuSub">UM MUNDO ABANDONADO • PROTÓTIPO 3D</div>
+  <button class="menuBtn" id="startGame">JOGAR</button>
+  <button class="menuBtn secondary" id="openSettings">CONFIGURAÇÕES</button>
+  <div style="font-size:10px;color:#91a08f;text-align:center;margin-top:12px">Explore, encontre suprimentos e sobreviva.</div>
+ </div>
+</div>
+<div id="settingsMenu">
+ <div class="menuCard">
+  <h2 style="margin:0 0 4px">CONFIGURAÇÕES</h2>
+  <div class="menuSub">Ajuste a câmera e a interface do jogo.</div>
+  <div class="setting">
+   <label>VISÃO DO JOGADOR</label>
+   <div class="choiceRow">
+    <button data-view="1">1ª pessoa</button><button data-view="2" class="selected">3ª pessoa</button><button data-view="3">2ª pessoa*</button>
+   </div>
+   <div style="font-size:10px;color:#9eae9d;margin-top:7px">*2ª pessoa: câmera frontal acompanhando o personagem.</div>
+  </div>
+  <div class="setting">
+   <label>TIPO DE CÂMERA</label>
+   <div class="choiceRow">
+    <button data-camera="free" class="selected">Livre</button><button data-camera="top">Top down fixa</button>
+   </div>
+  </div>
+  <div class="setting">
+   <label>PERSONALIZAR HUD — SLOTS</label>
+   <div id="hudSlots">
+    <button class="slotPreview selected" data-hud="classic">HUD 01<br>Clássica</button>
+    <button class="slotPreview" data-hud="compact">HUD 02<br>Compacta</button>
+    <button class="slotPreview" data-hud="minimal">HUD 03<br>Mínima</button>
+   </div>
+  </div>
+  <div class="setting">
+   <label>EFEITO VERMELHO AO RECEBER DANO</label>
+   <div class="choiceRow"><button data-blood="on" class="selected">ON</button><button data-blood="off">OFF</button></div>
+  </div>
+  <button class="menuBtn" id="saveSettings">SALVAR E VOLTAR</button>
+  <button class="menuBtn secondary" id="backMenu">VOLTAR AO MENU</button>
+ </div>
+</div>
+<div id="deathScreen">
+ <div class="overlayCard">
+  <div class="overlayEyebrow">ZONA MORTA • FIM DE JOGO</div>
+  <div class="overlayTitle">VOCÊ MORREU</div>
+  <div class="overlayText">A zona ficou perigosa demais. Você pode tentar novamente ou voltar ao abrigo dos sobreviventes.</div>
+  <div class="overlayStats">
+   <div class="overlayStat"><strong id="deathKills">0</strong>INFECTADOS</div>
+   <div class="overlayStat"><strong id="deathLoot">0</strong>SUPRIMENTOS</div>
+   <div class="overlayStat"><strong id="deathAmmo">0</strong>MUNIÇÕES</div>
+  </div>
+  <button class="overlayBtn" id="retryButton">TENTAR NOVAMENTE</button>
+  <button class="overlayBtn secondary" id="deathLobbyButton">VOLTAR AO LOBBY</button>
+ </div>
+</div>
+<div id="lobbyScreen">
+ <div class="overlayCard">
+  <div class="overlayEyebrow">BASE DOS SOBREVIVENTES</div>
+  <div class="overlayTitle">LOBBY</div>
+  <div class="lobbyTag">ÁREA SEGURA • SEM INFECTADOS</div>
+  <div class="overlayText">Respawn concluído. Prepare-se, confira seus suprimentos e volte para a Zona Morta quando estiver pronto.</div>
+  <div class="overlayStats">
+   <div class="overlayStat"><strong id="lobbyHp">100</strong>VIDA</div>
+   <div class="overlayStat"><strong id="lobbyMed">1</strong>KITS</div>
+   <div class="overlayStat"><strong id="lobbyAmmo">48</strong>RESERVA</div>
+  </div>
+  <button class="overlayBtn" id="enterZoneButton">ENTRAR NA ZONA DE COMBATE</button>
+ </div>
+</div>
+<div id="hitFlash"></div>
+
+<div id="hud">
+ <div id="status" class="panel">VIDA <span id="hp">100</span>%<br>ENERGIA <span id="energy">100</span>%<br>ITENS <span id="loot">0</span>/5<br>KITS <span id="medCount">1</span> • RESERVA <span id="reserveHud">48</span></div>
+ <div id="objective" class="panel">ZONA 04 — ÁREA ABANDONADA<br>Encontre suprimentos e evite os infectados.</div>
+  <div id="minimapWrap"><canvas id="minimap" width="180" height="180"></canvas></div>
+  <div id="questHud" class="panel">MISSÃO: fale com o sobrevivente marcado no mapa.</div>
+ <div id="message"></div><div id="crosshair">+</div><div id="weaponHud" class="panel">ARMA<br><strong>PISTOLA DE ENERGIA</strong><br><span id="ammo">12 / 48</span></div>
+ <div id="controls">
+  <div id="stick"><div id="nub"></div></div>
+  <div class="actions">
+   <button class="action" id="run">CORRER</button>
+   <button class="action" id="pulse">PULSO</button>
+   <button class="action" id="use">PEGAR</button>
+   <button class="action" id="jump">PULAR</button>
+  </div>
+  <div id="hint">Arraste o lado esquerdo para andar • toque no cenário para girar a câmera</div>
+ </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(()=>{
+const canvas=document.querySelector('#game');
+if(!window.THREE){document.querySelector('#message').textContent='Não foi possível carregar o motor 3D. Conecte-se à internet e atualize.';return;}
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x89958b);scene.fog=new THREE.Fog(0x89958b,28,95);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,180);
+const renderer=new THREE.WebGLRenderer({canvas,antialias:false});renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=false;
+scene.add(new THREE.HemisphereLight(0xc9d9d0,0x333a30,1.45));
+const sun=new THREE.DirectionalLight(0xffe4bd,1.25);sun.position.set(-20,35,15);scene.add(sun);
+const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:1});
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(180,180),mat(0x596451));ground.rotation.x=-Math.PI/2;ground.position.y=-.08;scene.add(ground);
+const grid=new THREE.GridHelper(180,45,0x53604c,0x68715c);grid.position.y=-.06;scene.add(grid);
+function box(x,y,z,sx,sy,sz,color){let m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat(color));m.position.set(x,y,z);scene.add(m);return m}
+function tree(x,z){let t=box(x,1.2,z,.45,2.4,.45,0x514332);let a=box(x,3,z,2.8,2.6,2.8,0x354b38);a.rotation.y=Math.random()*2;return [t,a]}
+for(let i=0;i<65;i++){let x=(Math.random()-.5)*130,z=(Math.random()-.5)*130;if(Math.abs(x)>8||Math.abs(z)>8)tree(x,z)}
+// buildings and road
+box(-12,2,-12,12,4,10,0x77766b);box(-12,4.2,-12,12,.5,10,0x41443f);
+box(13,2,-19,10,4,13,0x777d77);box(13,4.2,-19,10,.5,13,0x444b45);
+box(0,.01,-12,5,.03,75,0x353a36);
+for(let z=-45;z<25;z+=8)box(0,.04,z,.18,.02,3,0xc8c3a1);
+// Lobby seguro: praça elevada, luzes e portal de retorno à partida.
+const lobbyFloor=box(0,-.02,68,30,.35,25,0x465b50);
+box(0,.18,55,18,.18,1.2,0x9ba88d);box(-14,.18,68,1.2,.18,22,0x9ba88d);box(14,.18,68,1.2,.18,22,0x9ba88d);box(0,.18,81,28,.18,1.2,0x9ba88d);
+box(0,2.2,57,8,4,.6,0x263d36);box(0,4.35,57,9,.35,.9,0x8eaa79);
+box(-8,1.1,68,.5,2.2,.5,0x9dbb78);box(8,1.1,68,.5,2.2,.5,0x9dbb78);
+const portalRing=new THREE.Mesh(new THREE.TorusGeometry(2.1,.18,8,24),new THREE.MeshStandardMaterial({color:0x83d8ff,emissive:0x276b91,emissiveIntensity:1.1}));portalRing.position.set(0,2.5,58);scene.add(portalRing);
+const lobbyLamp1=new THREE.PointLight(0x80cfff,1.8,18);lobbyLamp1.position.set(0,5,58);scene.add(lobbyLamp1);
+const lobbyLamp2=new THREE.PointLight(0xc5e6a2,1.1,16);lobbyLamp2.position.set(-10,4,72);scene.add(lobbyLamp2);
+for(let i=0;i<14;i++){let x=(Math.random()-.5)*46,z=(Math.random()-.5)*48;if(Math.abs(x)<5&&Math.abs(z)<7)continue;box(x,.55,z,1.3,1.1,1.1,0x6b5944);box(x,.2,z,1.45,.35,1.25,0x393d37)}
+// player
+const player=new THREE.Group();scene.add(player);
+const body=new THREE.Mesh(new THREE.BoxGeometry(.8,1.15,.45),mat(0x394d43));body.position.y=1.05;player.add(body);
+const head=new THREE.Mesh(new THREE.BoxGeometry(.48,.48,.48),mat(0xb98f70));head.position.y=1.9;player.add(head);
+const pack=new THREE.Mesh(new THREE.BoxGeometry(.52,.65,.25),mat(0x343b31));pack.position.set(0,1.12,.32);player.add(pack);
+player.position.set(0,0,3);
+let yaw=0,move={x:0,y:0},running=false,hp=100,energy=100,loot=0,near=null,pulseTime=0,jumpV=0,grounded=true,gameOver=false,inLobby=false;
+const infected=[];
+function makeInfected(x,z){
+ let g=new THREE.Group();
+ let b=new THREE.Mesh(new THREE.BoxGeometry(.75,1.35,.48),mat(0x687b5a));b.position.y=.9;g.add(b);
+ let h=new THREE.Mesh(new THREE.BoxGeometry(.48,.48,.48),mat(0x9b9275));h.position.y=1.8;g.add(h);
+ // Barra de vida sempre voltada para a câmera.
+ const barGroup=new THREE.Group();barGroup.position.set(0,2.35,0);g.add(barGroup);
+ const back=new THREE.Mesh(new THREE.PlaneGeometry(1.05,.13),new THREE.MeshBasicMaterial({color:0x241c1c,side:THREE.DoubleSide}));barGroup.add(back);
+ const fill=new THREE.Mesh(new THREE.PlaneGeometry(1,.085),new THREE.MeshBasicMaterial({color:0x49d05a,side:THREE.DoubleSide}));fill.position.z=.01;barGroup.add(fill);
+ g.position.set(x,0,z);scene.add(g);
+ infected.push({g,stun:0,hp:100,maxHp:100,barGroup,fill,dead:false,spawnX:x,spawnZ:z});
+}
+for(let i=0;i<7;i++)makeInfected((Math.random()-.5)*42,(Math.random()-.5)*42-12);
+// Reposição contínua de infectados durante o combate (o lobby permanece seguro).
+let infectedSpawnTimer=2.5;
+const MAX_INFECTED=18, INFECTED_SPAWN_INTERVAL=3.2;
+function spawnInfectedNearPlayer(){
+ const angle=Math.random()*Math.PI*2;
+ const distance=20+Math.random()*13;
+ const x=THREE.MathUtils.clamp(player.position.x+Math.cos(angle)*distance,-72,72);
+ const z=THREE.MathUtils.clamp(player.position.z+Math.sin(angle)*distance,-72,72);
+ // Reaproveita corpos eliminados para evitar crescimento infinito de objetos 3D.
+ let zombie=infected.find(i=>i.dead);
+ if(zombie){
+  zombie.dead=false;zombie.g.visible=true;zombie.g.position.set(x,0,z);
+  zombie.spawnX=x;zombie.spawnZ=z;zombie.hp=zombie.maxHp;zombie.stun=0;
+  zombie.fill.scale.x=1;zombie.fill.position.x=0;zombie.fill.material.color.setHex(0x49d05a);
+ }else makeInfected(x,z);
+}
+function updateInfectedSpawns(dt){
+ infectedSpawnTimer-=dt;
+ if(infectedSpawnTimer>0)return;
+ infectedSpawnTimer=INFECTED_SPAWN_INTERVAL;
+ const alive=infected.reduce((n,i)=>n+(!i.dead?1:0),0);
+ if(alive<MAX_INFECTED)spawnInfectedNearPlayer();
+}
+const pickups=[];
+for(let i=0;i<5;i++){let x=(Math.random()-.5)*32,z=(Math.random()-.5)*32;let p=box(x,.45,z,.7,.7,.7,0xc69a48);p.userData={taken:false};pickups.push(p);}
+// Itens de sobrevivência: kits médicos e caixas de munição.
+const medkits=[],ammoBoxes=[],npcs=[];
+let medCount=1,kills=0,questState='notStarted',questKills=0;
+function makeSupply(x,z,type){
+ const color=type==='med'?0xd94a4a:0x9aafc7;
+ const item=box(x,.42,z,.85,.72,.75,color);
+ item.userData={taken:false,type};
+ if(type==='med')medkits.push(item);else ammoBoxes.push(item);
+}
+makeSupply(-7,-5,'med');makeSupply(9,-24,'med');makeSupply(6,8,'ammo');makeSupply(-15,-20,'ammo');makeSupply(18,-5,'ammo');
+function makeNpc(x,z){
+ const g=new THREE.Group();
+ const torso=new THREE.Mesh(new THREE.BoxGeometry(.72,1.15,.48),mat(0x477a9b));torso.position.y=1.0;g.add(torso);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(.3,10,8),mat(0xc69b7c));head.position.y=1.78;g.add(head);
+ const marker=new THREE.Mesh(new THREE.ConeGeometry(.22,.42,8),new THREE.MeshBasicMaterial({color:0xffdf55}));marker.position.y=2.45;g.add(marker);
+ g.position.set(x,0,z);scene.add(g);npcs.push(g);
+}
+makeNpc(4,-16);makeNpc(-19,9);
+function updateQuestHud(){
+ const q=document.querySelector('#questHud');
+ if(questState==='notStarted')q.textContent='MISSÃO: encontre um sobrevivente (marcador amarelo).';
+ else if(questState==='active')q.textContent='MISSÃO: elimine infectados • '+questKills+'/3';
+ else q.textContent='MISSÃO CONCLUÍDA! Recompensa recebida: +1 kit e +24 munições.';
+}
+function updateSupplyHud(){
+ document.querySelector('#medCount').textContent=medCount;
+ document.querySelector('#reserveHud').textContent=reserve;
+ document.querySelector('#ammo').textContent=ammo+' / '+reserve;
+}
+function useNearest(){
+ let best=null,bestD=3.4,kind='';
+ const check=(arr,k)=>arr.forEach(o=>{if(!o.userData?.taken){const d=o.position.distanceTo(player.position);if(d<bestD){bestD=d;best=o;kind=k;}}});
+ check(pickups,'loot');check(medkits,'med');check(ammoBoxes,'ammo');
+ npcs.forEach(n=>{const d=n.position.distanceTo(player.position);if(d<bestD){bestD=d;best=n;kind='npc';}});
+ if(!best){show('Aproxime-se de um item ou sobrevivente.');return;}
+ if(kind==='loot'){best.userData.taken=true;best.visible=false;loot++;document.querySelector('#loot').textContent=loot;show('Suprimento coletado!');if(loot>=5)show('Suprimentos encontrados!');}
+ if(kind==='med'){best.userData.taken=true;best.visible=false;medCount++;updateSupplyHud();show('Kit médico coletado!');}
+ if(kind==='ammo'){best.userData.taken=true;best.visible=false;reserve+=24;updateSupplyHud();show('+24 munições!');}
+ if(kind==='npc'){
+   if(questState==='notStarted'){questState='active';show('Sobrevivente: elimine 3 infectados!');}
+   else if(questState==='active')show('Sobrevivente: precisamos de 3 infectados eliminados! '+questKills+'/3');
+   else show('Sobrevivente: obrigado por nos salvar!');
+   updateQuestHud();
+ }
+}
+
+// joystick
+const stick=document.querySelector('#stick'),nub=document.querySelector('#nub');let stickId=null;
+function stickMove(e){let r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy),max=42;if(len>max){dx=dx/len*max;dy=dy/len*max}move.x=dx/max;move.y=dy/max;nub.style.transform=`translate(${dx}px,${dy}px)`}
+stick.addEventListener('pointerdown',e=>{stickId=e.pointerId;stick.setPointerCapture(stickId);stickMove(e)});
+stick.addEventListener('pointermove',e=>{if(e.pointerId===stickId)stickMove(e)});
+function stopStick(e){if(e.pointerId===stickId){stickId=null;move={x:0,y:0};nub.style.transform='translate(0,0)'}}
+stick.addEventListener('pointerup',stopStick);stick.addEventListener('pointercancel',stopStick);
+document.querySelector('#run').addEventListener('pointerdown',()=>running=true);
+['pointerup','pointercancel','pointerleave'].forEach(ev=>document.querySelector('#run').addEventListener(ev,()=>running=false));
+document.querySelector('#jump').addEventListener('pointerdown',()=>{if(grounded&&!gameOver){jumpV=6;grounded=false}});
+document.querySelector('#pulse').addEventListener('pointerdown',()=>{if(energy>=25&&!gameOver){energy-=25;pulseTime=1.3;infected.forEach(i=>{if(i.g.position.distanceTo(player.position)<8)i.stun=3});show('Pulso ativado!')}});
+document.querySelector('#use').addEventListener('pointerdown',useNearest);
+let msgTimer=0;function show(t){document.querySelector('#message').textContent=t;msgTimer=1.6}
+let dragging=false,lastX=0;
+canvas.addEventListener('pointerdown',e=>{if(e.clientX>innerWidth*.34){dragging=true;lastX=e.clientX}});
+canvas.addEventListener('pointermove',e=>{if(dragging){yaw-=(e.clientX-lastX)*.006;lastX=e.clientX}});
+canvas.addEventListener('pointerup',()=>dragging=false);canvas.addEventListener('pointercancel',()=>dragging=false);
+
+// Menu, câmera, HUD e arma fictícia de energia
+let viewMode=2,cameraMode='free',hudMode='classic',bloodOn=true,ammo=12,reserve=48;
+let started=false,fireCooldown=0;
+const mainMenu=document.querySelector('#mainMenu'),settingsMenu=document.querySelector('#settingsMenu');
+function showMenu(){mainMenu.style.display='flex';settingsMenu.style.display='none';document.body.classList.add('menuOpen')}
+function showDeathScreen(){
+ document.querySelector('#deathKills').textContent=kills;
+ document.querySelector('#deathLoot').textContent=loot;
+ document.querySelector('#deathAmmo').textContent=ammo+reserve;
+ document.querySelector('#deathScreen').style.display='flex';
+ document.body.classList.add('deathOpen');
+}
+function openLobby(){
+ gameOver=false;inLobby=true;started=true;hp=100;energy=100;jumpV=0;grounded=true;move={x:0,y:0};running=false;yaw=0;
+ player.position.set(0,0,70);
+ document.querySelector('#hp').textContent='100';document.querySelector('#energy').textContent='100';
+ document.querySelector('#lobbyHp').textContent='100';document.querySelector('#lobbyMed').textContent=medCount;document.querySelector('#lobbyAmmo').textContent=reserve;
+ document.querySelector('#deathScreen').style.display='none';document.querySelector('#lobbyScreen').style.display='flex';
+ document.body.classList.remove('deathOpen','menuOpen');document.body.classList.add('lobbyOpen');
+}
+function enterCombat(){
+ inLobby=false;gameOver=false;started=true;infectedSpawnTimer=1.5;hp=100;energy=100;yaw=0;jumpV=0;grounded=true;move={x:0,y:0};
+ player.position.set(0,0,3);
+ document.querySelector('#hp').textContent='100';document.querySelector('#energy').textContent='100';
+ document.querySelector('#lobbyScreen').style.display='none';document.body.classList.remove('lobbyOpen');
+ show('Você voltou à Zona Morta. Sobreviva!');
+}
+function retryMatch(){
+ gameOver=false;inLobby=false;started=true;infectedSpawnTimer=2.5;hp=100;energy=100;loot=0;kills=0;questKills=0;questState='notStarted';medCount=1;ammo=12;reserve=48;yaw=0;jumpV=0;grounded=true;move={x:0,y:0};running=false;pulseTime=0;fireCooldown=0;
+ player.position.set(0,0,3);
+ infected.forEach(i=>{i.dead=false;i.g.visible=true;i.g.position.set(i.spawnX,0,i.spawnZ);i.hp=i.maxHp;i.stun=0;i.fill.scale.x=1;i.fill.position.x=0;i.fill.material.color.setHex(0x49d05a)});
+ [...pickups,...medkits,...ammoBoxes].forEach(o=>{o.userData.taken=false;o.visible=true;});
+ document.querySelector('#loot').textContent='0';document.querySelector('#hp').textContent='100';document.querySelector('#energy').textContent='100';
+ updateSupplyHud();updateQuestHud();
+ document.querySelector('#deathScreen').style.display='none';document.querySelector('#lobbyScreen').style.display='none';
+ document.body.classList.remove('deathOpen','lobbyOpen','menuOpen');
+ show('Nova partida iniciada!');
+}
+document.querySelector('#retryButton').addEventListener('click',retryMatch);
+document.querySelector('#deathLobbyButton').addEventListener('click',openLobby);
+document.querySelector('#enterZoneButton').addEventListener('click',enterCombat);
+function showSettings(fromGame){settingsMenu.style.display='flex';mainMenu.style.display='none';settingsMenu.dataset.fromGame=fromGame?'yes':'no';}
+document.querySelector('#startGame').addEventListener('click',()=>{started=true;inLobby=false;mainMenu.style.display='none';settingsMenu.style.display='none';document.body.classList.remove('menuOpen')});
+document.querySelector('#openSettings').addEventListener('click',()=>showSettings(false));
+document.querySelector('#backMenu').addEventListener('click',()=>{settingsMenu.style.display='none';mainMenu.style.display='flex'});
+document.querySelector('#saveSettings').addEventListener('click',()=>{
+ settingsMenu.style.display='none';
+ if(settingsMenu.dataset.fromGame==='yes')document.body.classList.remove('menuOpen');
+ else mainMenu.style.display='flex';
+});
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{
+ viewMode=Number(b.dataset.view);document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('selected',x===b));
+}));
+document.querySelectorAll('[data-camera]').forEach(b=>b.addEventListener('click',()=>{
+ cameraMode=b.dataset.camera;document.querySelectorAll('[data-camera]').forEach(x=>x.classList.toggle('selected',x===b));
+}));
+document.querySelectorAll('[data-hud]').forEach(b=>b.addEventListener('click',()=>{
+ hudMode=b.dataset.hud;document.querySelectorAll('[data-hud]').forEach(x=>x.classList.toggle('selected',x===b));applyHud();
+}));
+document.querySelectorAll('[data-blood]').forEach(b=>b.addEventListener('click',()=>{
+ bloodOn=b.dataset.blood==='on';document.querySelectorAll('[data-blood]').forEach(x=>x.classList.toggle('selected',x===b));
+}));
+function applyHud(){
+ const status=document.querySelector('#status'),objective=document.querySelector('#objective'),weapon=document.querySelector('#weaponHud'),hint=document.querySelector('#hint');
+ if(hudMode==='compact'){status.style.transform='scale(.82)';status.style.transformOrigin='top left';objective.style.transform='scale(.82)';objective.style.transformOrigin='top right';weapon.style.transform='scale(.85)';hint.style.display='none'}
+ else if(hudMode==='minimal'){status.style.display='none';objective.style.display='none';weapon.style.display='none';hint.style.display='none'}
+ else{status.style.display='block';objective.style.display='block';weapon.style.display='block';hint.style.display='block';status.style.transform='';objective.style.transform='';weapon.style.transform=''}
+}
+function shoot(){
+ if(!started||gameOver||settingsMenu.style.display==='flex'||mainMenu.style.display==='flex'||fireCooldown>0)return;
+ if(ammo<=0){
+   if(reserve>0){let load=Math.min(12,reserve);ammo=load;reserve-=load;document.querySelector('#ammo').textContent=ammo+' / '+reserve;show('Recarregando...');fireCooldown=.65;}
+   else show('Sem munição!');
+   return;
+ }
+ ammo--;document.querySelector('#ammo').textContent=ammo+' / '+reserve;fireCooldown=.24;
+ const origin=player.position.clone();origin.y+=1.35;
+ const dir=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw)).normalize();
+ // Projétil luminoso visível viajando na direção para a qual o personagem olha.
+ const projectile=new THREE.Mesh(new THREE.SphereGeometry(.14,8,8),new THREE.MeshBasicMaterial({color:0x9de8ff}));
+ projectile.position.copy(origin);scene.add(projectile);
+ const start=performance.now(),duration=220;
+ function animateProjectile(now){
+   const t=Math.min(1,(now-start)/duration);
+   projectile.position.copy(origin).addScaledVector(dir,t*13);
+   if(t<1)requestAnimationFrame(animateProjectile);else scene.remove(projectile);
+ }
+ requestAnimationFrame(animateProjectile);
+ // Atinge o infectado mais próximo da linha de tiro.
+ let target=null,best=14;
+ infected.forEach(i=>{
+   if(i.dead)return;
+   const rel=i.g.position.clone().sub(origin);rel.y=0;
+   const d=rel.length(),dot=d>0?rel.normalize().dot(dir):1;
+   const dist=i.g.position.distanceTo(player.position);
+   if(dot>.88&&dist<best){best=dist;target=i}
+ });
+ if(target){
+   target.hp=Math.max(0,target.hp-35);
+   target.stun=1.1;
+   const ratio=target.hp/target.maxHp;
+   target.fill.scale.x=Math.max(.001,ratio);
+   target.fill.position.x=-(1-ratio)*.5;
+   if(ratio>.5)target.fill.material.color.setHex(0x49d05a);
+   else if(ratio>.25)target.fill.material.color.setHex(0xe0b83c);
+   else target.fill.material.color.setHex(0xd83b35);
+   show(target.hp<=0?'Infectado eliminado!':'Tiro acertou!');
+   if(target.hp<=0){target.dead=true;target.g.visible=false;kills++;
+      if(questState==='active'){questKills++;if(questKills>=3){questState='complete';medCount++;reserve+=24;updateSupplyHud();show('Missão concluída! Recompensa recebida.');}updateQuestHud();}
+    }
+ }else show('Disparo!');
+}
+document.querySelector('#pulse').textContent='PULSO';
+const fireButton=document.createElement('button');fireButton.className='action';fireButton.id='fire';fireButton.textContent='ATIRAR';
+document.querySelector('.actions').appendChild(fireButton);
+const medButton=document.createElement('button');medButton.className='action';medButton.id='medUse';medButton.textContent='MED KIT';
+document.querySelector('.actions').appendChild(medButton);
+medButton.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(medCount>0&&hp<100){medCount--;hp=Math.min(100,hp+45);document.querySelector('#hp').textContent=Math.ceil(hp);updateSupplyHud();show('Vida recuperada!');}else show(medCount<=0?'Sem kits médicos!':'Sua vida já está cheia.');});fireButton.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();shoot();});fireButton.addEventListener('touchstart',e=>{e.preventDefault();shoot();},{passive:false});
+const settingsButton=document.createElement('button');settingsButton.className='action';settingsButton.textContent='MENU';settingsButton.style.position='absolute';settingsButton.style.right='18px';settingsButton.style.top='104px';settingsButton.style.pointerEvents='auto';document.querySelector('#controls').appendChild(settingsButton);
+settingsButton.addEventListener('pointerdown',()=>{showSettings(true);document.body.classList.add('menuOpen')});
+showMenu();
+
+
+// Minimapa 2D: jogador, infectados, NPCs e suprimentos.
+const mapCanvas=document.querySelector('#minimap'),mapCtx=mapCanvas.getContext('2d');
+function drawMinimap(){
+ const c=mapCtx,w=mapCanvas.width,h=mapCanvas.height,scale=1.35,range=58;
+ c.clearRect(0,0,w,h);c.fillStyle='#18251d';c.fillRect(0,0,w,h);
+ c.strokeStyle='#62735f';c.lineWidth=1;c.strokeRect(1,1,w-2,h-2);
+ const px=w/2,py=h/2;
+ function dot(x,z,color,r){
+   const dx=(x-player.position.x)*scale,dy=(z-player.position.z)*scale;
+   if(Math.abs(dx)<range&&Math.abs(dy)<range){c.fillStyle=color;c.beginPath();c.arc(px+dx,py+dy,r,0,Math.PI*2);c.fill();}
+ }
+ // Estradas e referências discretas
+ c.strokeStyle='#59635a';c.beginPath();c.moveTo(px-5,0);c.lineTo(px-5,h);c.stroke();
+ infected.forEach(i=>{if(!i.dead)dot(i.g.position.x,i.g.position.z,'#e64b45',4)});
+ npcs.forEach(n=>dot(n.position.x,n.position.z,'#ffdf55',5));
+ pickups.forEach(o=>{if(!o.userData.taken)dot(o.position.x,o.position.z,'#d8ad52',3)});
+ medkits.forEach(o=>{if(!o.userData.taken)dot(o.position.x,o.position.z,'#ff7777',4)});
+ ammoBoxes.forEach(o=>{if(!o.userData.taken)dot(o.position.x,o.position.z,'#8bc8ff',4)});
+ c.save();c.translate(px,py);c.rotate(-yaw);c.fillStyle='#ffffff';c.beginPath();c.moveTo(0,-8);c.lineTo(-5,6);c.lineTo(5,6);c.closePath();c.fill();c.restore();
+}
+
+const clock=new THREE.Clock();
+function animate(){requestAnimationFrame(animate);let dt=Math.min(clock.getDelta(),.04);
+ if(!gameOver&&!inLobby&&started&&settingsMenu.style.display!=='flex'&&mainMenu.style.display!=='flex'){
+  updateInfectedSpawns(dt);
+  let speed=running?7:4.2;let forward=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw)),right=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+  let v=forward.multiplyScalar(-move.y).add(right.multiplyScalar(move.x));if(v.length()>1)v.normalize();
+  player.position.addScaledVector(v,speed*dt);player.position.x=THREE.MathUtils.clamp(player.position.x,-78,78);player.position.z=THREE.MathUtils.clamp(player.position.z,-78,78);
+  if(v.length()>.05)player.rotation.y=Math.atan2(v.x,v.z);
+  jumpV-=14*dt;player.position.y+=jumpV*dt;if(player.position.y<=0){player.position.y=0;jumpV=0;grounded=true}
+  infected.forEach(i=>{if(i.dead)return;i.barGroup.quaternion.copy(camera.quaternion);if(i.stun>0){i.stun-=dt;return}let d=i.g.position.distanceTo(player.position);if(d<22&&d>1.15){let dir=player.position.clone().sub(i.g.position).normalize();i.g.position.addScaledVector(dir,1.45*dt);i.g.rotation.y=Math.atan2(dir.x,dir.z)}if(d<1.25){hp=Math.max(0,hp-13*dt);document.querySelector('#hp').textContent=Math.ceil(hp)}});
+  if(pulseTime>0)pulseTime-=dt;energy=Math.min(100,energy+5*dt);document.querySelector('#energy').textContent=Math.floor(energy);
+  if(hp<=0&&!gameOver){gameOver=true;showDeathScreen();}
+ }
+ if(fireCooldown>0)fireCooldown-=dt;
+ let target;
+ if(cameraMode==='top'){target=new THREE.Vector3(player.position.x,player.position.y+24,player.position.z+.01);camera.up.set(0,0,-1);camera.fov=55;camera.updateProjectionMatrix()}
+ else if(viewMode===1){target=new THREE.Vector3(player.position.x,player.position.y+2.05,player.position.z);camera.up.set(0,1,0);camera.fov=72;camera.updateProjectionMatrix()}
+ else if(viewMode===3){target=new THREE.Vector3(player.position.x-Math.sin(yaw)*7,player.position.y+3.2,player.position.z-Math.cos(yaw)*7);camera.up.set(0,1,0);camera.fov=65;camera.updateProjectionMatrix()}
+ else{target=new THREE.Vector3(player.position.x+Math.sin(yaw)*8,player.position.y+5,player.position.z+Math.cos(yaw)*8);camera.up.set(0,1,0);camera.fov=65;camera.updateProjectionMatrix()}
+ camera.position.lerp(target,.16);
+ if(viewMode===1&&cameraMode!=='top'){camera.rotation.set(0,yaw+Math.PI,0)}else camera.lookAt(player.position.x,player.position.y+1.1,player.position.z);
+ document.querySelector('#crosshair').style.display=(viewMode===1&&cameraMode!=='top')?'block':'none';
+ document.querySelector('#hitFlash').style.opacity=(bloodOn&&hp<100&&Math.random()<.015)?'.8':'0';
+ drawMinimap();renderer.render(scene,camera);if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)document.querySelector('#message').textContent=''}
+}
+animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+})();
+</script>
+</body></html>
