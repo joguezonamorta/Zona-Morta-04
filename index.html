@@ -663,7 +663,7 @@ for(let i=0;i<7;i++)makeInfected((Math.random()-.5)*42,(Math.random()-.5)*42-12)
 // Reposição contínua de infectados durante o combate (o lobby permanece seguro).
 let infectedSpawnTimer=2.5;
 const MAX_INFECTED=18, INFECTED_SPAWN_INTERVAL=3.2;
-function spawnInfectedNearPlayer(force){const tp=force||pickType();
+function spawnInfectedNearPlayer(force){if(NET.cl)return;const tp=force||pickType();
  const angle=Math.random()*Math.PI*2;
  const distance=20+Math.random()*13;
  const x=THREE.MathUtils.clamp(player.position.x+Math.cos(angle)*distance,-122,122);
@@ -676,12 +676,12 @@ function spawnInfectedNearPlayer(force){const tp=force||pickType();
   zombie.fill.scale.x=1;zombie.fill.position.x=0;zombie.fill.material.color.setHex(0x49d05a);
  }else makeInfected(x,z,tp);if(tp==='swarm')for(let k=0;k<5;k++)spawnAt(x+(Math.random()-.5)*3,z+(Math.random()-.5)*3,'swarm');
 }
-function updateInfectedSpawns(dt){if(waveMode)return;
+function updateInfectedSpawns(dt){if(waveMode||NET.cl)return;
  infectedSpawnTimer-=dt;
  if(infectedSpawnTimer>0)return;
  infectedSpawnTimer=Math.max(1.2,INFECTED_SPAWN_INTERVAL-wave*.15);
  const alive=infected.reduce((n,i)=>n+(!i.dead?1:0),0);
- if(alive<MAX_INFECTED)spawnInfectedNearPlayer();
+ if(alive<MAX_INFECTED+(NET.playing?Object.keys(NET.rp).length*6:0)){const a=NET.playing?netAnchor():null;if(a)netSwap(a);spawnInfectedNearPlayer();netRestore()}
 }
 const pickups=[];
 for(let i=0;i<5;i++){let x=(Math.random()-.5)*32,z=(Math.random()-.5)*32;let p=makeCrate(x,z);p.userData={taken:false};pickups.push(p);}
@@ -834,8 +834,9 @@ NET.send=(id,m)=>{try{if(NET.host){const c=NET.conns[id];if(c&&c.open)c.send(m)}
 NET.bc=m=>{if(!NET.host)return;for(const id in NET.conns){try{const c=NET.conns[id];if(c.open)c.send(m)}catch(e){}}};
 function netDmg(id,n){NET.send(id,{t:'d',n})}
 function netKill(t){NET.send(t.by,{t:'k',ty:t.type})}
-function netDown(){NET.down=true;hp=0;hpEl.textContent=0;show('Você caiu! Volte na próxima horda.');sfx(120,.9,'sawtooth',.14,30)}
-function netRevive(){NET.down=false;hp=maxHp();hpEl.textContent=Math.ceil(hp);energy=100;show('Você voltou!')}
+function netDown(){NET.down=true;hp=0;hpEl.textContent=0;show('Você caiu! Um aliado pode te reanimar ficando perto por 3s.');sfx(120,.9,'sawtooth',.14,30)}
+function netRevive(f){NET.down=false;hp=Math.round(maxHp()*(f||1));hpEl.textContent=Math.ceil(hp);energy=100;show('Você voltou!')}
+function netAnchor(){const c=[];if(!NET.down)c.push(null);for(const id in NET.rp)if(!NET.rp[id].dn)c.push(id);return c.length?c[(Math.random()*c.length)|0]:null}
 function netTarget(i){let best=null,bd=1e9;const gp=i.g.position;if(!NET.down)bd=gp.distanceTo(player.position);
  for(const id in NET.rp){const r=NET.rp[id];if(r.dn)continue;const d=Math.hypot(gp.x-r.x,gp.z-r.z);if(d<bd){bd=d;best=id}}return best}
 function netSwap(id){const r=NET.rp[id];if(!r)return;NET.lp.copy(player.position);player.position.set(r.x,r.y,r.z);NET.sw=id}
@@ -865,7 +866,7 @@ function netApplySnap(m){NET.pl=m.p||[];NET.w=m.w;const seen={};
  for(const k in NET.zm){const o=NET.zm[k];if(o&&!seen[k]&&!o.dead&&o.nidx==k){o.dead=true;o.g.visible=false;burst(o.g.position,0x8fd05a,8);if(o.tg)o.tg.visible=false}}
  const A=m.a||[];A.forEach((a,j)=>{let q=NET.am[j];if(!q){q=NET.am[j]=new THREE.Mesh(new THREE.SphereGeometry(.22,8,8),NETMAT['']);scene.add(q)}q.material=NETMAT[a[3]]||NETMAT[''];q.scale.setScalar(a[3]==='mind'?1.7:1);q.position.set(a[0],a[1],a[2]);q.visible=true});
  for(let j=A.length;j<NET.am.length;j++)NET.am[j].visible=false;
- const w=m.w;if(!w)return;const n=w[0],ph=w[1];
+ if(!waveMode)return;const w=m.w;if(!w)return;const n=w[0],ph=w[1];
  if(ph==='choosing'||ph==='won'){if(wavePhase!=='choosing'&&wavePhase!=='won'){waveNo=n;waveDone()}}
  else{if(wavePhase==='choosing'||wavePhase==='won')document.querySelector('#modScreen').style.display='none';
   wavePhase=ph==='countdown'?'active':ph;if(n!==waveNo){waveNo=n;show('HORDA '+n+(n%5===0?' • CHEFÃO!':'')+' — prepare-se!');sfx(150,.6,'sawtooth',.1,60)}}}
@@ -895,23 +896,26 @@ function netTick(dt){if(!NET.on||!NET.playing)return;NET.acc+=dt;
  if(NET.host){
   if(NET.pend){NET.pd-=dt;if(Object.keys(NET.rp).every(k=>NET.pk[k])||NET.pd<=0){const cb=NET.pend;NET.pend=null;NET.pk={};cb()}}
   if(!NET.ended&&NET.down&&Object.values(NET.rp).every(r=>r.dn)){NET.ended=true;NET.bc({t:'end'});gameOver=true;showDeathScreen()}}
- netAvatars(dt);netHud(dt)}
+ if(NET.down&&!NET.ended){const nr=netPeers().some(q=>!q[8]&&Math.hypot(q[2]-player.position.x,q[4]-player.position.z)<2.5);NET.rv=nr?(NET.rv||0)+dt:0;if(nr&&!NET.rvm){NET.rvm=1;show('Sendo reanimado...')}if(!nr)NET.rvm=0;if(NET.rv>=3){NET.rv=0;NET.rvm=0;netRevive(.5)}}
+ netAvatars(dt);netHud(dt);chatBtn.style.display='flex'}
 function netRo(){NET.ro=[{id:'h',name:NET.name}];for(const id in NET.rp)NET.ro.push({id,name:NET.rp[id].name});NET.bc({t:'ro',l:NET.ro})}
 function netHostMsg(c,m){if(!m||typeof m!=='object')return;let id=c._pid;
  if(m.t==='hello'&&!id){if(NET.playing||Object.keys(NET.conns).length>=3){c.send({t:'no',r:NET.playing?'A partida já começou.':'Sala cheia (máx. 4).'});setTimeout(()=>{try{c.close()}catch(e){}},400);return}
-  id='p'+(++NET.pc);c._pid=id;NET.conns[id]=c;NET.rp[id]={name:String(m.name||'Amigo').slice(0,12),x:0,y:0,z:3,yaw:0,hp:100,mx:100,dn:0,f:0,r:0};c.send({t:'wl',pid:id});netRo();cpDraw();return}
+  id='p'+(++NET.pc);c._pid=id;NET.conns[id]=c;NET.rp[id]={name:chatFilter(String(m.name||'Amigo').slice(0,12))||'Amigo',x:0,y:0,z:3,yaw:0,hp:100,mx:100,dn:0,f:0,r:0};c.send({t:'wl',pid:id});netRo();cpDraw();return}
  if(!id)return;
  if(m.t==='st'){const r=NET.rp[id];if(r){r.x=+m.x||0;r.y=+m.y||0;r.z=+m.z||0;r.yaw=+m.yaw||0;r.hp=+m.hp||0;r.mx=+m.mx||100;r.dn=m.dn?1:0;r.f=m.f?1:0;r.r=m.r?1:0}}
  else if(m.t==='h'){const z=infected[m.i|0];if(z&&!z.dead&&NET.playing){z.by=id;netHit=true;statSkip++;try{hurtInfected(z,Math.min(3000,+m.a||0))}finally{statSkip--;netHit=false}}}
- else if(m.t==='mp')NET.pk[id]=1}
+ else if(m.t==='mp')NET.pk[id]=1
+ else if(m.t==='c'){if(typeof m.x==='string'){const r=NET.rp[id],now=performance.now();if(r&&now>=(r.cc||0)){r.cc=now+700;const x=chatFilter(m.x);if(x){chatShow(id,-1,x);NET.bc({t:'c',id,x})}}}else{const i=m.i|0;if(i>=0&&i<CHAT.length){chatShow(id,i);NET.bc({t:'c',id,i})}}}}
 function netDrop(c){const id=c._pid;if(!id)return;delete NET.conns[id];delete NET.rp[id];if(NET.av[id]){scene.remove(NET.av[id].g);delete NET.av[id]}netRo();cpDraw();if(NET.playing)show('Um jogador saiu da partida.')}
 function netClientMsg(m){if(!m||typeof m!=='object')return;
  switch(m.t){
   case 'wl':NET.pid=m.pid;NET.joined=true;cpDraw();break;
   case 'ro':NET.ro=m.l;cpDraw();break;
   case 'no':{const r=m.r;netLeave();cpErr(r);break}
-  case 'go':NET.playing=true;NET.ended=false;NET.slot=(m.slots&&m.slots[NET.pid])||0;cpEl.style.display='none';startWaves(m.mode);wavePhase='active';player.position.x=(NET.slot-1.5)*2;break;
+  case 'go':NET.playing=true;NET.ended=false;NET.slot=(m.slots&&m.slots[NET.pid])||0;cpEl.style.display='none';if(m.mode==='free'){enterCombat();infected.forEach(i=>{i.dead=true;i.g.visible=false;i.nidx=-1})}else{startWaves(m.mode);wavePhase='active'}player.position.x=(NET.slot-1.5)*2;break;
   case 'snap':netApplySnap(m);break;
+  case 'c':if(m.id===NET.pid)break;if(typeof m.x==='string')chatShow(m.id,-1,chatFilter(m.x));else if(m.i>=0&&m.i<CHAT.length)chatShow(m.id,m.i|0);break;
   case 'd':hurtPlayer(+m.n||0);break;
   case 'bh':ballHit({k:m.k||''});break;
   case 'k':kills++;gainXp({type:m.ty});break;
@@ -920,7 +924,7 @@ function genCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let c='';for(let i
 function netLeave(){try{for(const id in NET.conns)NET.conns[id].close()}catch(e){}try{if(NET.hc)NET.hc.close()}catch(e){}try{if(NET.peer)NET.peer.destroy()}catch(e){}
  for(const id in NET.av)scene.remove(NET.av[id].g);NET.am.forEach(q=>scene.remove(q));
  Object.assign(NET,{on:false,host:false,cl:false,playing:false,ended:false,peer:null,hc:null,conns:{},rp:{},pid:'',ro:[],pl:[],av:{},zm:{},am:[],w:null,sw:null,down:false,pend:null,pk:{},joined:false,pc:0});
- const el=document.querySelector('#netHud');if(el)el.remove();cpDraw()}
+ const el=document.querySelector('#netHud');if(el)el.remove();chatHide();cpDraw()}
 function netHostStart(){if(typeof Peer==='undefined'){cpErr('A biblioteca online não carregou. Abra o jogo com internet.');return}
  netLeave();cpErrMsg='';NET.code=genCode();NET.host=true;NET.on=true;NET.cl=false;NET.pid='h';NET.ro=[{id:'h',name:NET.name}];
  const pr=NET.peer=new Peer('zmcoop-'+NET.code);
@@ -938,14 +942,14 @@ function netJoin(code){code=String(code||'').trim().toUpperCase();if(code.length
  cpDraw()}
 function netLost(){if(!NET.on)return;const was=NET.playing;netLeave();if(was){openLobby();show('Conexão com o anfitrião perdida.')}else cpErr('Conexão encerrada.')}
 function netStart(){if(!Object.keys(NET.conns).length){cpErr('Aguarde pelo menos 1 amigo entrar na sala.');return}
- const slots={h:0};let k=1;for(const id in NET.conns)slots[id]=k++;NET.playing=true;NET.ended=false;NET.slot=0;NET.bc({t:'go',mode:cpMode,slots});cpEl.style.display='none';startWaves(cpMode);player.position.x=-3}
+ const slots={h:0};let k=1;for(const id in NET.conns)slots[id]=k++;NET.playing=true;NET.ended=false;NET.slot=0;NET.bc({t:'go',mode:cpMode,slots});cpEl.style.display='none';if(cpMode==='free')enterCombat();else startWaves(cpMode);player.position.x=-3}
 // ----- painel -----
 let cpErrMsg='',cpMode='std';
 const cpEl=document.createElement('div');cpEl.id='coopScreen';cpEl.style.cssText='position:fixed;inset:0;z-index:37;display:none;align-items:center;justify-content:center;background:#000c;padding:12px';document.body.appendChild(cpEl);
 function cpErr(m){cpErrMsg=m;cpDraw()}
 function cpDraw(){if(!NET.nameSet){NET.name=(typeof save!=='undefined'&&save.cn)||'Sobrevivente';NET.nameSet=1}
  const B=(id,t,st)=>'<button class="overlayBtn'+(st?' secondary':'')+'" id="'+id+'">'+t+'</button>';
- let h='<div class="overlayCard" style="text-align:left;max-height:94vh;overflow:auto"><div class="overlayEyebrow">CO-OP ONLINE • HORDA 2–4 JOGADORES</div>';
+ let h='<div class="overlayCard" style="text-align:left;max-height:94vh;overflow:auto"><div class="overlayEyebrow">CO-OP ONLINE • 2–4 JOGADORES</div>';
  h+='<div class="overlayText">Seu nome: <input id="cpName" maxlength="12" value="'+escH(NET.name)+'" style="background:#0b1a14;color:#eaf3df;border:1px solid #ffffff44;border-radius:8px;padding:6px 8px;width:140px"></div>';
  if(!NET.on){
   h+='<div class="overlayText">Um jogador cria a sala e passa o código para os amigos. Todos jogam juntos contra a horda.</div>'+B('cpHost','CRIAR SALA')
@@ -954,15 +958,57 @@ function cpDraw(){if(!NET.nameSet){NET.name=(typeof save!=='undefined'&&save.cn)
   if(NET.host)h+='<div class="overlayText">Código da sala:<br><b style="font-size:30px;letter-spacing:6px;color:#ffd66b">'+NET.code+'</b><br><small>'+(NET.peer&&NET.peer.open?'Sala aberta. Passe o código aos amigos.':'Criando sala...')+'</small></div>';
   else h+='<div class="overlayText">'+(NET.joined?'Conectado! Aguardando o anfitrião iniciar...':'Conectando...')+'</div>';
   h+='<div class="overlayText"><b>Jogadores ('+NET.ro.length+'/4):</b><br>'+NET.ro.map(r=>'<span style="color:#'+AVC[pci(r.id)].toString(16).padStart(6,'0')+'">●</span> '+escH(r.name)+(r.id==='h'?' (anfitrião)':'')).join('<br>')+'</div>';
-  if(NET.host)h+='<div class="overlayText">Modo:</div><div style="display:flex;gap:6px"><button class="overlayBtn'+(cpMode==='std'?'':' secondary')+'" id="cpStd" style="flex:1">HORDA PADRÃO (10)</button><button class="overlayBtn'+(cpMode==='endless'?'':' secondary')+'" id="cpEnd" style="flex:1">SEM FIM</button></div>'+B('cpStart','▶ INICIAR PARTIDA');
+  if(NET.host)h+='<div class="overlayText">Modo:</div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="overlayBtn'+(cpMode==='std'?'':' secondary')+'" id="cpStd" style="flex:1">HORDA PADRÃO (10)</button><button class="overlayBtn'+(cpMode==='endless'?'':' secondary')+'" id="cpEnd" style="flex:1">SEM FIM</button><button class="overlayBtn'+(cpMode==='free'?'':' secondary')+'" id="cpFree" style="flex:1">MODO LIVRE</button></div>'+B('cpStart','▶ INICIAR PARTIDA');
   h+=B('cpLeave','SAIR DA SALA',1)}
  if(cpErrMsg)h+='<div class="overlayText" style="color:#ff9a8a">'+escH(cpErrMsg)+'</div>';
  h+=B('cpClose','FECHAR',1)+'</div>';cpEl.innerHTML=h;
  const q=k=>cpEl.querySelector(k),on=(k,f)=>{const e=q(k);if(e)e.onclick=f};
- const nm=q('#cpName');if(nm)nm.onchange=()=>{NET.name=(nm.value||'Sobrevivente').slice(0,12);try{save.cn=NET.name;persist()}catch(e){}};
+ const nm=q('#cpName');if(nm)nm.onchange=()=>{NET.name=chatFilter((nm.value||'Sobrevivente').slice(0,12))||'Sobrevivente';try{save.cn=NET.name;persist()}catch(e){}};
  on('#cpHost',()=>{cpErrMsg='';netHostStart()});on('#cpJoin',()=>{const e=q('#cpCode');netJoin(e?e.value:'')});
- on('#cpStd',()=>{cpMode='std';cpDraw()});on('#cpEnd',()=>{cpMode='endless';cpDraw()});on('#cpStart',netStart);
+ on('#cpStd',()=>{cpMode='std';cpDraw()});on('#cpEnd',()=>{cpMode='endless';cpDraw()});on('#cpFree',()=>{cpMode='free';cpDraw()});on('#cpStart',netStart);
  on('#cpLeave',()=>{cpErrMsg='';netLeave()});on('#cpClose',()=>{cpEl.style.display='none'})}
+// ----- chat rápido -----
+const CHAT=['🆘 Preciso de ajuda!','👉 Venham aqui!','👍 Boa!','⚠️ Cuidado!','🙏 Valeu!','🔫 Sem munição!','💀 Chefão chegando!','🏃 Recuar!'];
+let chatLast=0;
+const chatBtn=document.createElement('button');chatBtn.textContent='💬';chatBtn.style.cssText='position:fixed;right:12px;top:42%;z-index:30;width:46px;height:46px;border-radius:50%;border:1px solid #ffffff55;background:#10201acc;color:#fff;font-size:22px;display:none;align-items:center;justify-content:center;touch-action:manipulation';document.body.appendChild(chatBtn);
+const chatPan=document.createElement('div');chatPan.style.cssText='position:fixed;right:66px;top:30%;z-index:31;display:none;grid-template-columns:1fr 1fr;gap:6px;background:#0b1410ee;border:1px solid #ffffff44;border-radius:12px;padding:8px;width:300px;max-width:70vw';
+CHAT.forEach((t,i)=>{const b=document.createElement('button');b.textContent=(i+1)+' '+t;b.style.cssText='background:#1d3a2c;color:#eaf3df;border:1px solid #ffffff33;border-radius:8px;padding:9px 6px;font-size:12px;font-weight:700;text-align:left';b.onclick=()=>{chatSend(i)};chatPan.appendChild(b)});document.body.appendChild(chatPan);
+const chatLog=document.createElement('div');chatLog.style.cssText='position:fixed;left:10px;bottom:210px;z-index:9;pointer-events:none;font:700 12px sans-serif;color:#eaf3df;text-shadow:0 1px 3px #000;max-width:55vw';document.body.appendChild(chatLog);
+chatBtn.onclick=()=>{chatPan.style.display=chatPan.style.display==='grid'?'none':'grid'};
+function chatHide(){chatBtn.style.display='none';chatPan.style.display='none';chatLog.innerHTML=''}
+addEventListener('keydown',e=>{if(!NET.playing)return;if(e.target===chatIn){if(e.code==='Enter'){chatSendText();e.preventDefault()}else if(e.code==='Escape'){chatIn.blur();chatPan.style.display='none'}e.stopImmediatePropagation();return}
+ if(e.code==='Enter'&&!e.repeat){chatPan.style.display='grid';chatIn.focus();e.preventDefault();e.stopImmediatePropagation();return}
+ if(e.code==='KeyT'&&!e.repeat){chatPan.style.display=chatPan.style.display==='grid'?'none':'grid';e.preventDefault();e.stopImmediatePropagation();return}
+ if(chatPan.style.display==='grid'&&/^Digit[1-8]$/.test(e.code)){chatSend(+e.code.slice(5)-1);e.preventDefault();e.stopImmediatePropagation()}},true);
+function chatSend(i){const now=performance.now();if(now-chatLast<1200)return;chatLast=now;chatPan.style.display='none';
+ if(NET.host){chatShow('h',i);NET.bc({t:'c',id:'h',i})}else{NET.send('h',{t:'c',i});chatShow(NET.pid,i)}}
+// ----- chat livre + filtro de palavrões -----
+const _runs=w=>w.replace(/(.)\1*/g,(m,c)=>c+(m.length>1?'{'+m.length+',}':'+'));
+const BAD_EX=['cu','cus','fdp','pqp','vtnc','tnc','vsf','krl','crlh','bct','kct','retard','fag','fags'].map(w=>new RegExp('^'+_runs(w)+'$'));
+const BAD_PF=['puta','porra','caralh','karalh','merda','fode','foda','fodi','foder','fuder','buceta','xoxota','viado','arrombad','desgraca','vagabund','otario','babaca','imbecil','idiota','retardad','retarded','cuzao','cusao','cacete','punheta','escroto','boquete','prostitut','fuck','shit','bitch','cunt','nigga','nigger','faggot','whore','slut','asshole','bastard','dick','pussy'].map(w=>new RegExp('^'+_runs(w)));
+const BAD_OK=/^(putativ|dickens|shiit|shitak|cacetet)/;
+function chatNorm(w){return w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/(?<=[a-z])!(?=[a-z])/g,'i').replace(/[01345@$7]/g,c=>({'0':'o','1':'i','3':'e','4':'a','5':'s','@':'a','$':'s','7':'t'}[c])).replace(/[^a-z]/g,'')}
+function chatBad(w){return !!w&&!BAD_OK.test(w)&&(BAD_EX.some(r=>r.test(w))||BAD_PF.some(r=>r.test(w)))}
+function chatFilter(t){t=String(t).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,80);
+ const tk=[];t.replace(/\S+/g,(m,i)=>{tk.push({s:i,e:i+m.length,n:chatNorm(m)});return m});
+ const mk=new Array(tk.length).fill(false);
+ for(let k=0;k<tk.length;k++)if(chatBad(tk[k].n))mk[k]=true;
+ for(let k=0;k<tk.length;k++){if(tk[k].n.length!==1)continue;let e=k;while(e+1<tk.length&&tk[e+1].n.length===1)e++;
+  for(let a=k;a<e;a++){if(chatBad(tk.slice(a,e+1).map(x=>x.n).join(''))){for(let q=a;q<=e;q++)mk[q]=true;break}}k=e}
+ let out='',last=0;tk.forEach((x,k)=>{out+=t.slice(last,x.s)+(mk[k]?'*'.repeat(x.e-x.s):t.slice(x.s,x.e));last=x.e});return out+t.slice(last)}
+const chatIn=document.createElement('input');chatIn.maxLength=80;chatIn.placeholder='Digite e toque OK (filtro ligado)';chatIn.autocomplete='off';chatIn.style.cssText='flex:1;min-width:0;background:#0b1a14;color:#eaf3df;border:1px solid #ffffff44;border-radius:8px;padding:8px;font-size:16px';
+const chatOk=document.createElement('button');chatOk.textContent='OK';chatOk.style.cssText='background:#2f6b4f;color:#fff;border:1px solid #ffffff44;border-radius:8px;padding:8px 12px;font-weight:700';chatOk.onclick=()=>chatSendText();
+{const row=document.createElement('div');row.style.cssText='grid-column:1/-1;display:flex;gap:6px;margin-top:2px';row.appendChild(chatIn);row.appendChild(chatOk);chatPan.appendChild(row)}
+addEventListener('keyup',e=>{if(e.target===chatIn)e.stopImmediatePropagation()},true);
+function chatSendText(){const x=chatFilter(chatIn.value),now=performance.now();if(!x||now-chatLast<900)return;chatLast=now;chatIn.value='';chatIn.blur();chatPan.style.display='none';
+ if(NET.host){chatShow('h',-1,x);NET.bc({t:'c',id:'h',x})}else{NET.send('h',{t:'c',x});chatShow(NET.pid,-1,x)}}
+function bubbleSprite(t){const c=document.createElement('canvas');c.width=512;c.height=80;const x=c.getContext('2d');x.font='bold 30px sans-serif';x.textAlign='center';const m=t.length>30?t.slice(0,29)+'…':t;x.fillStyle='#000b';x.fillRect(0,10,512,60);x.fillStyle='#fff';x.fillText(m,256,52);
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false,transparent:true}));sp.scale.set(5,.78,1);sp.position.y=3.5;sp.renderOrder=11;return sp}
+function chatShow(id,i,txt){const r=NET.ro.find(x=>x.id===id),nm=r?r.name:'Amigo',col='#'+AVC[pci(id)].toString(16).padStart(6,'0'),msg=txt!=null?txt:CHAT[i];if(!msg)return;
+ const l=document.createElement('div'),sp=document.createElement('span');sp.style.color=col;sp.textContent=nm+': ';l.appendChild(sp);l.appendChild(document.createTextNode(msg));
+ chatLog.appendChild(l);while(chatLog.children.length>4)chatLog.removeChild(chatLog.firstChild);setTimeout(()=>{if(l.parentNode)l.remove()},7000);
+ sfx(700,.08,'sine',.05,900);
+ const a=NET.av[id];if(a){if(a.bub)a.g.remove(a.bub);const b=bubbleSprite(msg);a.g.add(b);a.bub=b;setTimeout(()=>{if(a.bub===b){a.g.remove(b);a.bub=null}},4500)}}
 document.querySelector('#coopButton').onclick=()=>{cpErrMsg='';cpEl.style.display='flex';cpDraw()};
 function updNpcs(T,dt){npcs.forEach(n=>{if(!n.visible)return;const u=n.userData,dx=player.position.x-n.position.x,dz=player.position.z-n.position.z,d=Math.hypot(dx,dz),t=T+u.ph;
  if(d<10){let df=Math.atan2(dx,dz)-n.rotation.y;df=Math.atan2(Math.sin(df),Math.cos(df));n.rotation.y+=df*Math.min(1,dt*4)}
