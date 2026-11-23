@@ -345,8 +345,13 @@ body.lefty.onehand .actions{right:130px!important}
   <div id="hint">Arraste o lado esquerdo para andar • toque no cenário para girar a câmera • PC: WASD, ←/→ câmera, J atirar, E pegar, R recarregar, Shift correr, H kit, Q pulso, B mochila, M mapa (teclas remapeáveis nas configurações)</div>
  </div>
 </div>
+<script>
+// Mostra erros na tela (útil no celular, onde não há console)
+(function(){function box(t){var d=document.getElementById('errBox');if(!d){d=document.createElement('div');d.id='errBox';d.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#5a0000dd;color:#fff;font:12px monospace;padding:6px 8px;max-height:40vh;overflow:auto;white-space:pre-wrap';(document.body||document.documentElement).appendChild(d)}d.textContent+=t+'\n'}
+addEventListener('error',function(e){if(e.target&&e.target.src&&e.target!==window)box('Falha ao carregar: '+e.target.src);else box('Erro: '+(e.message||'?')+' (linha '+(e.lineno||'?')+')')},true);
+addEventListener('unhandledrejection',function(e){box('Erro: '+(e.reason&&e.reason.message||e.reason))})})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 (()=>{
 const canvas=document.querySelector('#game');
@@ -930,15 +935,22 @@ function netLeave(){try{for(const id in NET.conns)NET.conns[id].close()}catch(e)
  for(const id in NET.av)scene.remove(NET.av[id].g);NET.am.forEach(q=>scene.remove(q));
  Object.assign(NET,{on:false,host:false,cl:false,playing:false,ended:false,peer:null,hc:null,conns:{},rp:{},pid:'',ro:[],pl:[],av:{},zm:{},am:[],w:null,sw:null,down:false,pend:null,pk:{},joined:false,pc:0,ps:''});
  const el=document.querySelector('#netHud');if(el)el.remove();chatHide();rideBtn.style.display='none';cpDraw()}
-function netHostStart(){if(typeof Peer==='undefined'){cpErr('A biblioteca online não carregou. Abra o jogo com internet.');return}
+function loadPeerLib(ok,fail){if(typeof Peer!=='undefined'){ok();return}
+ const U=['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];let i=0;
+ const next=()=>{if(typeof Peer!=='undefined'){ok();return}if(i>=U.length){fail();return}let done=false;const sc=document.createElement('script');sc.src=U[i++];
+  const go=()=>{if(done)return;done=true;clearTimeout(tm);next()};
+  sc.onload=()=>{if(done)return;done=true;clearTimeout(tm);typeof Peer!=='undefined'?ok():next()};sc.onerror=go;const tm=setTimeout(go,7000);document.head.appendChild(sc)};next()}
+const PEER_FAIL='Não foi possível carregar a biblioteca online. Verifique a internet e tente de novo.';
+function netHostStart(){cpErrMsg='Carregando biblioteca online...';cpDraw();loadPeerLib(netHostStart2,()=>cpErr(PEER_FAIL))}
+function netHostStart2(){
  netLeave();cpErrMsg='';NET.code=genCode();NET.host=true;NET.on=true;NET.cl=false;NET.pid='h';NET.ro=[{id:'h',name:NET.name}];
  const pr=NET.peer=new Peer('zmcoop-'+NET.code);
  pr.on('open',()=>cpDraw());
  pr.on('error',e=>{if(NET.playing)return;if(e.type==='unavailable-id'){netHostStart();return}netLeave();cpErr('Erro de rede ('+e.type+'). Tente novamente.')});
  pr.on('connection',c=>{c.on('data',m=>netHostMsg(c,m));c.on('close',()=>netDrop(c));c.on('error',()=>netDrop(c))});
  cpDraw()}
-function netJoin(code){code=String(code||'').trim().toUpperCase();if(code.length<4){cpErr('Digite o código da sala.');return}
- if(typeof Peer==='undefined'){cpErr('A biblioteca online não carregou. Abra o jogo com internet.');return}
+function netJoin(code){code=String(code||'').trim().toUpperCase();if(code.length<4){cpErr('Digite o código da sala.');return}cpErrMsg='Carregando biblioteca online...';cpDraw();loadPeerLib(()=>netJoin2(code),()=>cpErr(PEER_FAIL))}
+function netJoin2(code){
  netLeave();cpErrMsg='';NET.on=true;NET.cl=true;NET.host=false;
  const pr=NET.peer=new Peer();
  pr.on('error',e=>{if(NET.playing)return;const msg=e.type==='peer-unavailable'?'Sala não encontrada. Confira o código.':'Erro de rede ('+e.type+').';netLeave();cpErr(msg)});
@@ -992,7 +1004,7 @@ const _runs=w=>w.replace(/(.)\1*/g,(m,c)=>c+(m.length>1?'{'+m.length+',}':'+'));
 const BAD_EX=['cu','cus','fdp','pqp','vtnc','tnc','vsf','krl','crlh','bct','kct','retard','fag','fags'].map(w=>new RegExp('^'+_runs(w)+'$'));
 const BAD_PF=['puta','porra','caralh','karalh','merda','fode','foda','fodi','foder','fuder','buceta','xoxota','viado','arrombad','desgraca','vagabund','otario','babaca','imbecil','idiota','retardad','retarded','cuzao','cusao','cacete','punheta','escroto','boquete','prostitut','fuck','shit','bitch','cunt','nigga','nigger','faggot','whore','slut','asshole','bastard','dick','pussy'].map(w=>new RegExp('^'+_runs(w)));
 const BAD_OK=/^(putativ|dickens|shiit|shitak|cacetet)/;
-function chatNorm(w){return w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/(?<=[a-z])!(?=[a-z])/g,'i').replace(/[01345@$7]/g,c=>({'0':'o','1':'i','3':'e','4':'a','5':'s','@':'a','$':'s','7':'t'}[c])).replace(/[^a-z]/g,'')}
+function chatNorm(w){return w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/([a-z])!(?=[a-z])/g,'$1i').replace(/[01345@$7]/g,c=>({'0':'o','1':'i','3':'e','4':'a','5':'s','@':'a','$':'s','7':'t'}[c])).replace(/[^a-z]/g,'')}
 function chatBad(w){return !!w&&!BAD_OK.test(w)&&(BAD_EX.some(r=>r.test(w))||BAD_PF.some(r=>r.test(w)))}
 function chatFilter(t){t=String(t).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,80);
  const tk=[];t.replace(/\S+/g,(m,i)=>{tk.push({s:i,e:i+m.length,n:chatNorm(m)});return m});
@@ -1047,7 +1059,7 @@ function netDismount(){const dv=NET.ps?netDriver(NET.ps):null;NET.ps='';if(dv)pl
 function netPassenger(){if(!NET.ps)return;const d=NET.ps,dv=netDriver(d);
  if(!dv||!dv.riding||dv.dn||riding||NET.down){netDismount();return}
  const sp=netSeatPos(d,NET.pid);if(!sp){netDismount();return}player.position.set(sp.x,sp.y,sp.z)}
-const rideBtn=document.createElement('button');rideBtn.className='action';rideBtn.id='rideBtn';rideBtn.style.cssText='position:absolute;right:18px;top:300px;pointer-events:auto;display:none;background:#2f6b4f;max-width:150px;font-size:12px';q$('#controls').appendChild(rideBtn);
+const rideBtn=document.createElement('button');rideBtn.className='action';rideBtn.id='rideBtn';rideBtn.style.cssText='position:absolute;right:18px;top:300px;pointer-events:auto;display:none;background:#2f6b4f;max-width:150px;font-size:12px';document.querySelector('#controls').appendChild(rideBtn);
 rideBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();
  if(NET.ps){netDismount();return}
  const id=NET.rideT;if(!id)return;const dv=netDriver(id);if(!dv||!dv.riding)return;if(netPassengers(id).length>=(SEATS[dv.v]||[]).length){show('Sem lugar neste veículo.');return}
