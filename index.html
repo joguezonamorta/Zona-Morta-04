@@ -884,7 +884,7 @@ function mkAvatar(name,ci){const g=new THREE.Group(),c=AVC[ci%4];g.rotation.orde
  g.legL=mk(-.2,.7);g.legR=mk(.2,.7);g.armL=mk(-.52,1.58);g.armR=mk(.52,1.58);g.wg=new THREE.Group();g.wg.position.set(.52,1.22,.3);g.add(g.wg);
  g.fl=new THREE.Mesh(new THREE.SphereGeometry(.2,8,6),new THREE.MeshBasicMaterial({color:0xffe27a}));g.fl.position.set(.52,1.2,.9);g.fl.visible=false;g.add(g.fl);
  g.add(nameSprite(name,'#'+c.toString(16).padStart(6,'0')));scene.add(g);return g}
-function netPeers(){if(NET.host){const l=[];for(const id in NET.rp){const r=NET.rp[id];l.push([id,r.name,r.x,r.y,r.z,r.yaw,r.hp,r.mx,r.dn,r.f,r.r,r.v,r.ps,r.wi])}return l}return(NET.pl||[]).filter(p=>p[0]!==NET.pid)}
+function netPeers(){if(NET.host){const l=[];for(const id in NET.rp){const r=NET.rp[id];if(r.out)continue;l.push([id,r.name,r.x,r.y,r.z,r.yaw,r.hp,r.mx,r.dn,r.f,r.r,r.v,r.ps,r.wi])}return l}return(NET.pl||[]).filter(p=>p[0]!==NET.pid)}
 function netAvatars(dt){const L=netPeers(),seen={},k=1-Math.exp(-12*dt);
  L.forEach(p=>{const id=p[0];seen[id]=1;let a=NET.av[id];if(!a){a=NET.av[id]={g:mkAvatar(String(p[1]).slice(0,12),pci(id)),px:p[2],pz:p[4]};a.g.position.set(p[2],p[3],p[4])}
   const g=a.g;g.position.x+=(p[2]-g.position.x)*k;g.position.z+=(p[4]-g.position.z)*k;g.position.y+=(p[3]-g.position.y)*k;
@@ -905,7 +905,7 @@ function netTick(dt){if(!NET.on||!NET.playing)return;NET.acc+=dt;
  if(NET.acc>=.083){NET.acc=0;if(NET.host)NET.bc(netSnap());else NET.send('h',{t:'st',x:+player.position.x.toFixed(2),y:+player.position.y.toFixed(2),z:+player.position.z.toFixed(2),yaw:+player.rotation.y.toFixed(2),hp:Math.round(hp),mx:maxHp(),dn:NET.down?1:0,f:muzzleFlash.visible?1:0,r:riding?1:0,v:curV,ps:NET.ps||'',wi:wi})}
  if(NET.host){
   if(NET.pend){NET.pd-=dt;if(Object.keys(NET.rp).every(k=>NET.pk[k])||NET.pd<=0){const cb=NET.pend;NET.pend=null;NET.pk={};cb()}}
-  if(!NET.ended&&NET.down&&Object.values(NET.rp).every(r=>r.dn)){NET.ended=true;NET.bc({t:'end'});gameOver=true;showDeathScreen()}}
+  if(!NET.ended&&NET.down&&Object.values(NET.rp).every(r=>r.dn)){NET.ended=true;NET.lastRes='Derrota: todos os jogadores caíram.';NET.lastDead=1;S('deaths');persist();gameOver=true;openLobby()}}
  if(NET.down&&!NET.ended){const nr=netPeers().some(q=>!q[8]&&Math.hypot(q[2]-player.position.x,q[4]-player.position.z)<2.5);NET.rv=nr?(NET.rv||0)+dt:0;if(nr&&!NET.rvm){NET.rvm=1;show('Sendo reanimado...')}if(!nr)NET.rvm=0;if(NET.rv>=3){NET.rv=0;NET.rvm=0;netRevive(.5)}}
  netAvatars(dt);netPassenger();netRideUpdate();netHud(dt);chatBtn.style.display='flex'}
 function netRo(){NET.ro=[{id:'h',name:NET.name}];for(const id in NET.rp)NET.ro.push({id,name:NET.rp[id].name});NET.bc({t:'ro',l:NET.ro})}
@@ -916,6 +916,7 @@ function netHostMsg(c,m){if(!m||typeof m!=='object')return;let id=c._pid;
  if(m.t==='st'){const r=NET.rp[id];if(r){r.x=+m.x||0;r.y=+m.y||0;r.z=+m.z||0;r.yaw=+m.yaw||0;r.hp=+m.hp||0;r.mx=+m.mx||100;r.dn=m.dn?1:0;r.f=m.f?1:0;r.r=m.r?1:0;r.v=String(m.v||'').slice(0,8);r.ps=String(m.ps||'').slice(0,4);r.wi=m.wi|0}}
  else if(m.t==='h'){const z=infected[m.i|0];if(z&&!z.dead&&NET.playing){z.by=id;netHit=true;statSkip++;try{hurtInfected(z,Math.min(3000,+m.a||0))}finally{statSkip--;netHit=false}}}
  else if(m.t==='mp')NET.pk[id]=1
+ else if(m.t==='lv'){const r=NET.rp[id];if(r){r.dn=1;r.out=1}}
  else if(m.t==='c'){if(typeof m.x==='string'){const r=NET.rp[id],now=performance.now();if(r&&now>=(r.cc||0)){r.cc=now+700;const x=chatFilter(m.x);if(x){chatShow(id,-1,x);NET.bc({t:'c',id,x})}}}else{const i=m.i|0;if(i>=0&&i<CHAT.length){chatShow(id,i);NET.bc({t:'c',id,i})}}}}
 function netDrop(c){const id=c._pid;if(!id)return;delete NET.conns[id];delete NET.rp[id];if(NET.av[id]){scene.remove(NET.av[id].g);delete NET.av[id]}netRo();cpDraw();if(NET.playing)show('Um jogador saiu da partida.')}
 function netClientMsg(m){if(!m||typeof m!=='object')return;
@@ -924,16 +925,18 @@ function netClientMsg(m){if(!m||typeof m!=='object')return;
   case 'ro':NET.ro=m.l;cpDraw();break;
   case 'no':{const r=m.r;netLeave();cpErr(r);break}
   case 'go':NET.playing=true;NET.ended=false;NET.slot=(m.slots&&m.slots[NET.pid])||0;cpEl.style.display='none';if(m.mode==='free'){enterCombat();infected.forEach(i=>{i.dead=true;i.g.visible=false;i.nidx=-1})}else{startWaves(m.mode);wavePhase='active'}player.position.x=(NET.slot-1.5)*2;break;
-  case 'snap':netApplySnap(m);break;
+  case 'snap':if(NET.playing)netApplySnap(m);break;
   case 'c':if(m.id===NET.pid)break;if(typeof m.x==='string')chatShow(m.id,-1,chatFilter(m.x));else if(m.i>=0&&m.i<CHAT.length)chatShow(m.id,m.i|0);break;
-  case 'd':hurtPlayer(+m.n||0);break;
-  case 'bh':ballHit({k:m.k||''});break;
-  case 'k':kills++;gainXp({type:m.ty});break;
-  case 'end':if(!gameOver){NET.ended=true;gameOver=true;showDeathScreen()}break}}
+  case 'd':if(NET.playing)hurtPlayer(+m.n||0);break;
+  case 'bh':if(NET.playing)ballHit({k:m.k||''});break;
+  case 'k':if(NET.playing){kills++;gainXp({type:m.ty})}break;
+  case 'end':case 'team':if(NET.playing){NET.fromHost=1;NET.lastRes=m.r||'Partida encerrada.';if(m.dead||m.t==='end'){S('deaths');persist()}
+   if(m.win&&waveMode&&wavePhase!=='won'){waveNo=m.n||waveNo;waveDone()}
+   if(NET.playing)openLobby()}break}}
 function genCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<5;i++)c+=A[(Math.random()*A.length)|0];return c}
 function netLeave(){try{for(const id in NET.conns)NET.conns[id].close()}catch(e){}try{if(NET.hc)NET.hc.close()}catch(e){}try{if(NET.peer)NET.peer.destroy()}catch(e){}
  for(const id in NET.av)scene.remove(NET.av[id].g);NET.am.forEach(q=>scene.remove(q));
- Object.assign(NET,{on:false,host:false,cl:false,playing:false,ended:false,peer:null,hc:null,conns:{},rp:{},pid:'',ro:[],pl:[],av:{},zm:{},am:[],w:null,sw:null,down:false,pend:null,pk:{},joined:false,pc:0,ps:''});
+ Object.assign(NET,{on:false,host:false,cl:false,playing:false,ended:false,peer:null,hc:null,conns:{},rp:{},pid:'',ro:[],pl:[],av:{},zm:{},am:[],w:null,sw:null,down:false,pend:null,pk:{},joined:false,pc:0,ps:'',last:'',lastRes:'',lastWin:0,lastDead:0,fromHost:0});
  const el=document.querySelector('#netHud');if(el)el.remove();chatHide();rideBtn.style.display='none';cpDraw()}
 function loadPeerLib(ok,fail){if(typeof Peer!=='undefined'){ok();return}
  const U=['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];let i=0;
@@ -957,8 +960,21 @@ function netJoin2(code){
  pr.on('open',()=>{const c=NET.hc=pr.connect('zmcoop-'+code,{reliable:true});c.on('open',()=>c.send({t:'hello',name:NET.name}));c.on('data',netClientMsg);c.on('close',netLost);c.on('error',()=>{})});
  setTimeout(()=>{if(NET.on&&NET.cl&&!NET.joined){netLeave();cpErr('Tempo esgotado ao conectar. Verifique o código e a conexão.')}},12000);
  cpDraw()}
-function netLost(){if(!NET.on)return;const was=NET.playing;netLeave();if(was){openLobby();show('Conexão com o anfitrião perdida.')}else cpErr('Conexão encerrada.')}
+// ----- fim de partida: todos voltam para a mesma equipe (sala), sem desconectar -----
+function netTeamReset(){const was=NET.playing;
+ if(!NET.lastRes)NET.lastRes=NET.host?'O anfitrião encerrou a partida.':'Partida encerrada.';
+ NET.last=NET.lastRes+' • '+kills+' abates • '+loot+' saques';
+ if(was){if(NET.host)NET.bc({t:'team',r:NET.lastRes,win:NET.lastWin?1:0,dead:NET.lastDead?1:0,n:waveNo});else if(!NET.fromHost)NET.send('h',{t:'lv'})}
+ NET.lastRes='';NET.lastWin=0;NET.lastDead=0;NET.fromHost=0;
+ if(NET.ps){try{netDismount()}catch(e){}}
+ NET.playing=false;NET.ended=false;NET.down=false;NET.pend=null;NET.pk={};NET.w=null;NET.sw=null;NET.zm={};NET.rv=0;NET.rvm=0;NET.ps='';
+ for(const id in NET.av)scene.remove(NET.av[id].g);NET.av={};NET.am.forEach(q=>scene.remove(q));NET.am=[];
+ if(NET.cl)infected.forEach(i=>{i.dead=true;i.g.visible=false;i.nidx=-1});
+ const el=document.querySelector('#netHud');if(el)el.remove();chatHide();rideBtn.style.display='none'}
+function netTeamShow(){cpErrMsg='';cpEl.style.display='flex';cpDraw()}
+function netLost(){if(!NET.on)return;const was=NET.playing;netLeave();if(was){openLobby();show('O anfitrião saiu: a equipe foi desfeita.')}else cpErr('Conexão encerrada.')}
 function netStart(){if(!Object.keys(NET.conns).length){cpErr('Aguarde pelo menos 1 amigo entrar na sala.');return}
+ for(const id in NET.rp){const r=NET.rp[id];r.dn=0;r.out=0;r.hp=100}
  const slots={h:0};let k=1;for(const id in NET.conns)slots[id]=k++;NET.playing=true;NET.ended=false;NET.slot=0;NET.bc({t:'go',mode:cpMode,slots});cpEl.style.display='none';if(cpMode==='free')enterCombat();else startWaves(cpMode);player.position.x=-3}
 // ----- painel -----
 let cpErrMsg='',cpMode='std';
@@ -974,7 +990,7 @@ function cpDraw(){if(!NET.nameSet){NET.name=(typeof save!=='undefined'&&save.cn)
  else{
   if(NET.host)h+='<div class="overlayText">Código da sala:<br><b style="font-size:30px;letter-spacing:6px;color:#ffd66b">'+NET.code+'</b><br><small>'+(NET.peer&&NET.peer.open?'Sala aberta. Passe o código aos amigos.':'Criando sala...')+'</small></div>';
   else h+='<div class="overlayText">'+(NET.joined?'Conectado! Aguardando o anfitrião iniciar...':'Conectando...')+'</div>';
-  h+='<div class="overlayText"><b>Jogadores ('+NET.ro.length+'/4):</b><br>'+NET.ro.map(r=>'<span style="color:#'+AVC[pci(r.id)].toString(16).padStart(6,'0')+'">●</span> '+escH(r.name)+(r.id==='h'?' (anfitrião)':'')).join('<br>')+'</div>';
+  if(NET.last)h+='<div class="overlayText" style="color:#ffd66b">Última partida: '+escH(NET.last)+'</div>';h+='<div class="overlayText"><b>Jogadores ('+NET.ro.length+'/4):</b><br>'+NET.ro.map(r=>'<span style="color:#'+AVC[pci(r.id)].toString(16).padStart(6,'0')+'">●</span> '+escH(r.name)+(r.id==='h'?' (anfitrião)':'')).join('<br>')+'</div>';
   if(NET.host)h+='<div class="overlayText">Modo:</div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="overlayBtn'+(cpMode==='std'?'':' secondary')+'" id="cpStd" style="flex:1">HORDA PADRÃO (10)</button><button class="overlayBtn'+(cpMode==='endless'?'':' secondary')+'" id="cpEnd" style="flex:1">SEM FIM</button><button class="overlayBtn'+(cpMode==='free'?'':' secondary')+'" id="cpFree" style="flex:1">MODO LIVRE</button></div>'+B('cpStart','▶ INICIAR PARTIDA');
   h+=B('cpLeave','SAIR DA SALA',1)}
  if(cpErrMsg)h+='<div class="overlayText" style="color:#ff9a8a">'+escH(cpErrMsg)+'</div>';
@@ -1693,13 +1709,14 @@ function lobbyCam(dt){
  return pos;
 }
 function lobbyCamOff(){lobbyIdle=0;lobbyUiA=0;lobbyScr.style.opacity='';lobbyScr.style.pointerEvents='';lobbyFadeEl.style.opacity=0;lobbyCapEl.style.opacity=0;lobbyFovSet=0;scene.fog.near=28}
-function openLobby(){if(NET.on)netLeave();exitWaves();lobbyShot=0;lobbyT=0;lobbyFovSet=0;lobbyIdle=0;lobbyUiA=0;lobbyScr.style.opacity='';lobbyScr.style.pointerEvents='';lobbyCapT.textContent=LSHOTS[0].n;
+function openLobby(){const inTeam=NET.on&&(NET.host||NET.joined);if(inTeam)netTeamReset();else if(NET.on)netLeave();exitWaves();lobbyShot=0;lobbyT=0;lobbyFovSet=0;lobbyIdle=0;lobbyUiA=0;lobbyScr.style.opacity='';lobbyScr.style.pointerEvents='';lobbyCapT.textContent=LSHOTS[0].n;
  updateXpHud();gameOver=false;inLobby=true;started=true;hp=maxHp();energy=100;stamina=100;exhausted=false;jumpV=0;grounded=true;move={x:0,y:0};running=false;yaw=0;
  player.position.set(0,0,70);player.rotation.y=Math.PI;
  document.querySelector('#hp').textContent=maxHp();document.querySelector('#energy').textContent='100';
  document.querySelector('#lobbyHp').textContent='100';document.querySelector('#lobbyMed').textContent=medCount;document.querySelector('#lobbyAmmo').textContent=reserve;
  document.querySelector('#deathScreen').style.display='none';document.querySelector('#lobbyScreen').style.display='flex';
  document.body.classList.remove('deathOpen','menuOpen');document.body.classList.add('lobbyOpen');
+ if(inTeam)netTeamShow();
 }
 function resetWorld(){infected.forEach((i,n)=>{const on=n<7&&!waveMode;i.dead=!on;i.g.visible=on;i.g.position.set(i.spawnX,0,i.spawnZ);if(Math.hypot(i.g.position.x-player.position.x,i.g.position.z-player.position.z)<16)i.g.position.z-=20;i.maxHp=ENEMY[i.type].hp;i.hp=i.maxHp;i.g.scale.setScalar(ENEMY[i.type].s);i.barGroup.visible=true;revive(i);i.stun=0;i.atk=0;i.fill.scale.x=1;i.fill.position.x=0;i.fill.material.color.setHex(0x49d05a)});[...pickups,...medkits,...ammoBoxes].forEach(o=>{o.userData.taken=waveMode;o.visible=!waveMode})}
 // ===== MODO ONDAS =====
@@ -1751,6 +1768,7 @@ function waveDone(){
  persist();updateXpHud();sfx(660,.5,'sine',.1,1320);
  if(waveMode==='std'&&waveNo>=10){
   wavePhase='won';const firstWin=!save.stdWin;save.stdWin=1;save.coins+=500;persist();updateXpHud();
+  if(NET.on&&NET.playing){NET.fromHost=1;NET.lastRes='Vitória! 10 hordas concluídas.';NET.lastWin=1;openLobby();return}
   modPanel('MODO ONDAS','VITÓRIA!','Você sobreviveu às 10 hordas! +$'+(bonus+500)+' em moedas.'+(firstWin?' MOTO desbloqueada na loja ($2000)!':''),[
    {main:1,html:'JOGAR NOVAMENTE',fn:retryMatch},{html:'VOLTAR AO LOBBY',fn:openLobby}]);return}
  const pool=MODS.filter(m=>!m.ok||m.ok()),pick=[];
@@ -1807,7 +1825,7 @@ function enterCombat(){waveMode=false;setArena(false);S('matches');matchT=0;kill
  document.querySelector('#lobbyScreen').style.display='none';document.body.classList.remove('lobbyOpen');
  resetWorld();document.querySelector('#loot').textContent='0';updateQuestHud();show('Você voltou à Zona Morta. Sobreviva!');
 }
-function retryMatch(){if(NET.on){netLeave();openLobby();return}S('matches');matchT=0;
+function retryMatch(){if(NET.on){openLobby();return}S('matches');matchT=0;
  gameOver=false;inLobby=false;started=true;infectedSpawnTimer=2.5;hp=maxHp();energy=100;stamina=100;exhausted=false;loot=0;kills=0;questKills=0;questState=qi>=QUESTS.length?'complete':'notStarted';medCount=1;ammo=12;reserve=48;yaw=0;jumpV=0;grounded=true;move={x:0,y:0};running=false;pulseTime=0;fireCooldown=0;
  player.position.set(0,0,3);
  resetWorld();reloadT=0;
