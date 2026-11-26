@@ -1338,7 +1338,7 @@ document.querySelector('#statButton').onclick=stOpen;
 save.sq=save.sq||{};save.rel=save.rel||{};save.tk=save.tk||{};if(!save.stdWin)save.veh={};save.veh=save.veh||{};curV=(VEHS[save.vsel]&&owned(save.vsel))?save.vsel:(Object.keys(VEHS).find(owned)||'moto');
 ['Quad','Buggy','Jeep'].forEach(n=>{document.querySelector('#buy'+n).onclick=()=>buyV(n.toLowerCase())});
 refreshSq();
-function persist(){try{localStorage.setItem(SAVE,JSON.stringify(wSaveW?Object.assign({},save,{w:wSaveW}):save))}catch(e){}}
+function persist(){try{localStorage.setItem(SAVE,JSON.stringify(wSaveW?Object.assign({},save,{w:wSaveW}):save))}catch(e){}try{if(window.__onPersist)window.__onPersist()}catch(e){}}
 // Missão diária: renova 24h após ser sorteada (guardado no save com horário de término).
 function dk(o){const d=new Date(Date.now()+o*864e5);return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()}
 function streakBump(){if(save.skd===dk(0))return save.sk||1;save.sk=(save.skd===dk(-1)?(save.sk||0):0)+1;save.skd=dk(0);return save.sk}
@@ -3040,7 +3040,7 @@ const FB_CONFIG={apiKey:'AIzaSyBNERC0B4vBdRzYitE8_NBuedEEyI0jxaE',authDomain:'zo
  function upload(){if(!user||!db)return Promise.resolve();const j=localStorage.getItem(KEY);if(!j)return Promise.resolve();return db.collection('saves').doc(user.uid).set({json:j,t:+localStorage.getItem(TK)||Date.now(),email:user.email||''}).catch(()=>{})}
  function queue(){clearTimeout(tm);tm=setTimeout(upload,4000)}
  // cada persist() local também agenda o envio para a nuvem
- const op=window.persist||persist;persist=function(){op.apply(this,arguments);try{localStorage.setItem(TK,Date.now())}catch(e){}if(user)queue()};
+ window.__onPersist=function(){try{localStorage.setItem(TK,Date.now())}catch(e){}if(user)queue()};
  addEventListener('pagehide',()=>{if(user)upload()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&user)upload()});
  function syncDown(){return db.collection('saves').doc(user.uid).get().then(d=>{
   if(!d.exists){return upload()}
